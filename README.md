@@ -6,7 +6,7 @@ Example code for running denoising and then transcription.
 `pip install asyncio websockets wave deepgram-sdk`
 
 ## Running Instructions
-Edit the run.sh file provided to add your Deepgram API Key and your nCompass API Key.
+Edit the run.sh file provided to set the following arguments.
 
 ## Arguments:
 - `wav_file`:         Input file to be denoised and transcribed. mp3 and wav are valid file types
