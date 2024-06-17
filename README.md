@@ -1,6 +1,19 @@
 # Cleaner Transcription Example
 
-Example code from (https://www.ncompass.tech/cleaner_transcription/quick_start). 
+Example code for running denoising and then transcription.
 
-Edit run.sh to add the required command line arguments and test out cleaner transcription with
-nCompass's denoising capabilities.
+## Installation
+`pip install asyncio websockets wave deepgram-sdk`
+
+## Running Instructions
+Edit the run.sh file provided to add your Deepgram API Key and your nCompass API Key.
+
+## Arguments:
+- `wav_file`:         Input file to be denoised and transcribed. mp3 and wav are valid file types
+- `deepgram_api_key`: Deepgram API Key
+- `ncompass_api_key`: nCompass API Key
+- `in_file_type`:     Type of input audio stream. Can be one of ['pcm' or 'mp3']
+- `out_file_type`:    Type of output audio stream. Can be one of ['pcm' or 'mp3']
+- `chunk_size_ms`:    Chunk size in ms of the chunks of input audio stream sent for denoising. Max value is 10000ms
+- `out_frame_rate`:   Output sampling frequency of the returned denoised audio stream
+

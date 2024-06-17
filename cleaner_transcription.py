@@ -2,26 +2,49 @@ import wave
 import asyncio
 import argparse
 import websockets
-from io import BytesIO
 from typing import AsyncIterator, cast
 from deepgram import DeepgramClient, PrerecordedOptions
 
-def get_url(api_key: str, input_freq: int, output_freq: int, bytes_per_sample: int) -> str:
+def deepgram_transcription(audio_file: str
+                           , api_key:  str) -> str:
+    '''
+    This function takes in an audio file in wav format and runs deepgram transcription with your
+    deepgram API key. This can be swapped out for any transcription provider you choose.
+    '''
+    print(f"INFO => Running Deepgram transcription...")
+    deepgram = DeepgramClient(api_key)
+
+    with open(audio_file, "rb") as buffer_data:
+        payload = { "buffer": buffer_data }
+
+        options = PrerecordedOptions(
+            smart_format=True, model="nova-2", language="en-US"
+        )
+
+        response = deepgram.listen.prerecorded.v("1").transcribe_file(payload, options)
+        return response["results"]["channels"][0]["alternatives"][0]["transcript"]
+
+def get_url(api_key:            str
+            , input_freq:       int
+            , output_freq:      int
+            , bytes_per_sample: int
+            , in_file_type:     str
+            , out_file_type:    str) -> str:
     '''
     The websocket API format is as follows:
     wss://<url>/denoise/<input_format>/<output_format>/<api_key>/<bytes_per_sample>/<input_sampling_frequency>/<output_sampling_frequency>
     Note here that the API is set to take in and return bytes in PCM format, i.e. the wav header
     should be parsed.
     '''
-    return f"wss://demo.ncompass.tech:12347/denoise/pcm/pcm/{api_key}/{bytes_per_sample}/{input_freq}/{output_freq}"
+    return f"wss://{api_key}.ncompass.tech/denoise/{in_file_type}/{out_file_type}/{api_key}/{bytes_per_sample}/{input_freq}/{output_freq}"
 
 def get_bytes_per_chunk(chunk_size_ms: int, frame_rate: int, bytes_per_frame: int) -> int:
     return int(bytes_per_frame * ((chunk_size_ms / 1000) * frame_rate))
 
-async def chunk_audio(audio_frames: bytes
-                      , chunk_size_ms: int
-                      , in_frame_rate: int
-                      , bytes_per_sample: int) -> AsyncIterator[bytes] : 
+async def chunk_audio(audio_frames:       bytes
+                      , chunk_size_ms:    int
+                      , in_frame_rate:    int
+                      , bytes_per_sample: int) -> AsyncIterator[bytes] :
     ''' 
     This function takes the input audio file read in as bytes and chunks it into chunks based on
     the chunk size specified. The chunks are yielded followed by a async sleep to yield back
@@ -38,7 +61,12 @@ async def chunk_audio(audio_frames: bytes
         yield chunk
         await asyncio.sleep(0)
 
-async def ncompass_denoising(wav_file: str, api_key: str) -> str:
+async def ncompass_denoising(wav_file:         str
+                             , api_key:        str
+                             , in_file_type:   str
+                             , out_file_type:  str
+                             , chunk_size_ms:  int
+                             , out_frame_rate: int) -> str:
     print(f"INFO => Denoising audio file {wav_file}...")
     output_file_name = "denoised_audio.wav"
     '''
@@ -57,17 +85,19 @@ async def ncompass_denoising(wav_file: str, api_key: str) -> str:
         sampling frequency. We hardcode the value to 8kHz here to avoid the second resampling since
         we are only using the resulting audio for transcription.
         '''
-        out_frame_rate = 8000 
+        out_frame_rate = out_frame_rate
         
         '''
         Chunk size is hardcoded to 10s as this is the maximum chunk size currently supported by our
         model and we are running in offline mode.
         '''
-        chunk_size_ms = 10000
+        chunk_size_ms = chunk_size_ms
         async with websockets.connect(get_url(api_key
                                               , in_frame_rate
                                               , out_frame_rate
-                                              , bytes_per_sample)) as ws:
+                                              , bytes_per_sample
+                                              , in_file_type
+                                              , out_file_type)) as ws:
                 num_frames_received = 0
                 denoised_audio = bytearray(b"")
                 async for chunk in chunk_audio(audio_frames
@@ -93,27 +123,19 @@ async def ncompass_denoising(wav_file: str, api_key: str) -> str:
 
     return output_file_name
 
-def deepgram_transcription(audio_file: str
-                           , api_key: str) -> str:
-    '''
-    This function takes in an audio file in wav format and runs deepgram transcription with your
-    deepgram API key. This can be swapped out for any transcription provider you choose.
-    '''
-    print(f"INFO => Running Deepgram transcription...")
-    deepgram = DeepgramClient(api_key)
-
-    with open(audio_file, "rb") as buffer_data:
-        payload = { "buffer": buffer_data }
-
-        options = PrerecordedOptions(
-            smart_format=True, model="nova-2", language="en-US"
-        )
-
-        response = deepgram.listen.prerecorded.v("1").transcribe_file(payload, options)
-        return response["results"]["channels"][0]["alternatives"][0]["transcript"]
-
-async def clean_transcription(wav_file: str, ncompass_api_key: str, deepgram_api_key: str) -> str:
-    denoised_audio_file = await ncompass_denoising(wav_file, ncompass_api_key)
+async def clean_transcription(wav_file:           str
+                              , ncompass_api_key: str
+                              , deepgram_api_key: str
+                              , in_file_type:     str
+                              , out_file_type:    str
+                              , chunk_size_ms:    int
+                              , out_frame_rate:   int) -> str:
+    denoised_audio_file = await ncompass_denoising(wav_file
+                                                   , ncompass_api_key
+                                                   , in_file_type
+                                                   , out_file_type
+                                                   , chunk_size_ms
+                                                   , out_frame_rate)
     return deepgram_transcription(denoised_audio_file, deepgram_api_key)
 
 if __name__ == "__main__":
@@ -123,14 +145,40 @@ if __name__ == "__main__":
                             , type=str
                             , required=True
                             , help = "File to denoise in .wav format")
+    arg_parser.add_argument("--in_file_type"
+                            , choices=['mp3', 'pcm']
+                            , type=str
+                            , default='pcm'
+                            , help = "Input audio stream type")
+    arg_parser.add_argument("--out_file_type"
+                            , choices=['mp3', 'pcm']
+                            , type=str
+                            , default='pcm'
+                            , help = "Output audio stream type")
     arg_parser.add_argument("--deepgram_api_key"
                             , type=str
                             , required=True
                             , help = "API Key for deepgram transcription")
+    arg_parser.add_argument("--ncompass_api_key"
+                            , type=str
+                            , required=True
+                            , help = "API Key for nCompass denoising")
+    arg_parser.add_argument("--chunk_size_ms"
+                            , type=int
+                            , default=10000
+                            , help = "Chunk size for realtime processing")
+    arg_parser.add_argument("--out_frame_rate"
+                            , type=int
+                            , default=8000
+                            , help = "Frame rate for returned audio")
     
     args = arg_parser.parse_args()
     transcription = asyncio.run(clean_transcription(args.wav_file
-                                                    , '1927dff9-7349-4260-93ab-9c26a3a2dfb4'
-                                                    , args.deepgram_api_key))
+                                                    , args.ncompass_api_key
+                                                    , args.deepgram_api_key
+                                                    , args.in_file_type
+                                                    , args.out_file_type
+                                                    , args.chunk_size_ms
+                                                    , args.out_frame_rate))
     print("INFO => Transcription: ")
     print(transcription)
