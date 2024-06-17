@@ -2,7 +2,7 @@
 
 Example code for running denoising and then transcription.
 
-## Installation
+## Dependencies
 `pip install asyncio websockets wave deepgram-sdk`
 
 ## Running Instructions
